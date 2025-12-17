@@ -46,136 +46,147 @@ export async function sendOtpEmail(to, otp) {
   return info;
 }
 
-// Send welcome email to new member
+export const sendMemberOtpEmail = async (email, otp) => {
+  const mailOptions = {
+    from: `ODISHA SOCIETY OF ONCOLOGY <${SMTP_USER}>`,
+    to: email,
+    subject: 'Your OTP for OSOO Registration',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">OSOO Member Registration</h2>
+        <p>Your OTP for registration is:</p>
+        <h1 style="background-color: #f0f0f0; padding: 15px; border-radius: 5px; text-align: center; letter-spacing: 5px;">
+          ${otp}
+        </h1>
+        <p>This OTP is valid for 10 minutes.</p>
+        <p>If you didn't request this OTP, please ignore this email.</p>
+      </div>
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
+export const sendPendingReviewEmail = async (email, name) => {
+  const mailOptions = {
+    from: `ODISHA SOCIETY OF ONCOLOGY <${SMTP_USER}>`,
+    to: email,
+    subject: 'OSOO Registration Under Review',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Welcome to OSOO, ${name}!</h2>
+        <p>Thank you for registering with OSOO. Your registration has been successfully verified with OTP.</p>
+        
+        <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+          <h3 style="color: #856404; margin-top: 0;">Your application is now under review</h3>
+          <p style="color: #856404; margin-bottom: 0;">
+            Our admin team will review your details and documents. This process usually takes 24-48 hours.
+          </p>
+        </div>
+        
+        <p>You will receive another email once your application is approved.</p>
+        <p>Thank you for your patience!</p>
+        <p>Best regards,<br>OSOO Team</p>
+      </div>
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
+export const sendApprovalEmail = async (email, name, uniqueId, tempPassword) => {
+  const mailOptions = {
+    from: `ODISHA SOCIETY OF ONCOLOGY <${SMTP_USER}>`,
+    to: email,
+    subject: 'Welcome to OSOO - Your Account is Approved!',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4CAF50;">Congratulations, ${name}!</h2>
+        <p>Your OSOO membership application has been approved by our admin team.</p>
+        
+        <div style="background-color: #e8f5e9; border: 1px solid #c8e6c9; border-radius: 5px; padding: 20px; margin: 20px 0;">
+          <h3 style="color: #2e7d32; margin-top: 0;">Your Login Credentials:</h3>
+          
+          <div style="background-color: white; padding: 15px; border-radius: 3px; margin: 10px 0;">
+            <p style="margin: 5px 0;"><strong>Unique ID:</strong> <span style="font-family: monospace; font-size: 16px;">${uniqueId}</span></p>
+            <p style="margin: 5px 0;"><strong>Temporary Password:</strong> <span style="font-family: monospace; font-size: 16px;">${tempPassword}</span></p>
+          </div>
+          
+          <p style="color: #d32f2f; font-weight: bold;">
+            ⚠️ Important: Please change your password immediately after first login.
+          </p>
+        </div>
+        
+        <p><strong>Login Instructions:</strong></p>
+        <ol>
+          <li>Go to OSOO member login page</li>
+          <li>Enter your Unique ID and Temporary Password</li>
+          <li>You'll be prompted to set a new password</li>
+        </ol>
+        
+        <p style="margin-top: 30px;">Welcome aboard! We're excited to have you as part of the OSOO community.</p>
+        
+        <p>Best regards,<br>OSOO Team</p>
+      </div>
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
+export const sendRejectionEmail = async (email, name, reason = null) => {
+  const mailOptions = {
+    from: `ODISHA SOCIETY OF ONCOLOGY <${SMTP_USER}>`,
+    to: email,
+    subject: 'Update on Your OSOO Registration',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Update on Your OSOO Registration</h2>
+        
+        <div style="background-color: #ffebee; border: 1px solid #ffcdd2; border-radius: 5px; padding: 20px; margin: 20px 0;">
+          <h3 style="color: #c62828; margin-top: 0;">Application Status: Not Approved</h3>
+          <p>Dear ${name},</p>
+          <p>After reviewing your application, we regret to inform you that we are unable to approve your OSOO membership at this time.</p>
+          
+          ${reason ? `
+            <div style="background-color: white; padding: 15px; border-radius: 3px; margin: 15px 0;">
+              <p style="margin: 0;"><strong>Admin Note:</strong> ${reason}</p>
+            </div>
+          ` : ''}
+          
+          <p>If you believe this is a mistake or would like more information, please contact our support team.</p>
+        </div>
+        
+        <p>Thank you for your interest in OSOO.</p>
+        <p>Best regards,<br>OSOO Team</p>
+      </div>
+    `,
+  };
+
+  return await transporter.sendMail(mailOptions);
+};
+
 export const sendMemberWelcomeEmail = async (email, name, uniqueId, tempPassword) => {
-  try {
-    const mailOptions = {
-      from: `"OSOO Association" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Welcome to OSOO Association - Your Registration is Complete!',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background-color: #0b61a8; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-                .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
-                .credentials { background-color: #e8f4ff; padding: 15px; border-radius: 5px; margin: 20px 0; }
-                .highlight { color: #0b61a8; font-weight: bold; }
-                .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #666; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Welcome to OSOO Association!</h1>
-                </div>
-                <div class="content">
-                    <p>Dear <strong>${name}</strong>,</p>
-                    
-                    <p>Congratulations! Your registration with the <strong>Odisha Surgical Oncology Association (OSOO)</strong> has been successfully verified.</p>
-                    
-                    <p>You are now a registered member of our association. Here are your login credentials:</p>
-                    
-                    <div class="credentials">
-                        <p><strong>Your Member ID:</strong> <span class="highlight">${uniqueId}</span></p>
-                        <p><strong>Temporary Password:</strong> <span class="highlight">${tempPassword}</span></p>
-                    </div>
-                    
-                    <p><strong>Important Instructions:</strong></p>
-                    <ol>
-                        <li>Use the above credentials to log in to the member portal</li>
-                        <li>You will be prompted to change your temporary password on first login</li>
-                        <li>Keep your member ID safe for future reference</li>
-                    </ol>
-                    
-                    <p><strong>Next Steps:</strong></p>
-                    <ul>
-                        <li>Complete your profile</li>
-                        <li>Pay your membership fees (if not already done)</li>
-                        <li>Explore member benefits and resources</li>
-                    </ul>
-                    
-                    <p>For any assistance, please contact our support team.</p>
-                    
-                    <p>Best regards,<br>
-                    <strong>OSOO Association Team</strong></p>
-                </div>
-                <div class="footer">
-                    <p>This is an automated email. Please do not reply to this message.</p>
-                    <p>© ${new Date().getFullYear()} OSOO Association. All rights reserved.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-      `
-    };
-
-    await transporter.sendMail(mailOptions);
-    console.log(`Welcome email sent to ${email}`);
-  } catch (error) {
-    console.error('Error sending welcome email:', error);
-    throw error;
-  }
+  return sendApprovalEmail(email, name, uniqueId, tempPassword);
 };
 
-// Send password change confirmation email
 export const sendPasswordChangeEmail = async (email, name) => {
-  try {
-    const mailOptions = {
-      from: `"OSOO Association" <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: 'Password Changed Successfully - OSOO Association',
-      html: `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background-color: #28a745; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
-                .content { background-color: #f9f9f9; padding: 30px; border-radius: 0 0 5px 5px; }
-                .footer { margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; text-align: center; font-size: 12px; color: #666; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="header">
-                    <h1>Password Changed Successfully</h1>
-                </div>
-                <div class="content">
-                    <p>Dear <strong>${name}</strong>,</p>
-                    
-                    <p>Your password for the OSOO Association member portal has been successfully changed.</p>
-                    
-                    <p><strong>Security Note:</strong></p>
-                    <ul>
-                        <li>If you did not make this change, please contact support immediately</li>
-                        <li>Never share your password with anyone</li>
-                        <li>Use a strong, unique password for your account</li>
-                    </ul>
-                    
-                    <p>If you have any questions or concerns, please don't hesitate to contact our support team.</p>
-                    
-                    <p>Best regards,<br>
-                    <strong>OSOO Association Team</strong></p>
-                </div>
-                <div class="footer">
-                    <p>This is an automated security notification. Please do not reply to this message.</p>
-                    <p>© ${new Date().getFullYear()} OSOO Association. All rights reserved.</p>
-                </div>
-            </div>
-        </body>
-        </html>
-      `
-    };
+  const mailOptions = {
+    from: `ODISHA SOCIETY OF ONCOLOGY <${SMTP_USER}>`,
+    to: email,
+    subject: 'Password Changed Successfully - OSOO',
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Password Update Confirmation</h2>
+        <p>Hello ${name},</p>
+        <p>Your OSOO member account password has been successfully changed.</p>
+        <p>If you did not initiate this change, please contact our support team immediately.</p>
+        <p>Best regards,<br>OSOO Team</p>
+      </div>
+    `,
+  };
 
-    await transporter.sendMail(mailOptions);
-    console.log(`Password change email sent to ${email}`);
-  } catch (error) {
-    console.error('Error sending password change email:', error);
-    throw error;
-  }
+  return await transporter.sendMail(mailOptions);
 };
+
+export default transporter;

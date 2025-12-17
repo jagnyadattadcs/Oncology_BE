@@ -27,6 +27,7 @@ const memberSchema = new mongoose.Schema(
       unique: true,
       index: true,
       trim: true,
+      sparse: true, // Allow null for pending members
     },
 
     tempPassword: {
@@ -75,6 +76,13 @@ const memberSchema = new mongoose.Schema(
       required: true,
     },
 
+    // NEW: Three-stage verification status
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+
     isVerified: {
       type: Boolean,
       default: false,
@@ -93,9 +101,33 @@ const memberSchema = new mongoose.Schema(
 
     otpExpires: {
       type: Date
+    },
+
+    isOtpVerified: {
+      type: Boolean,
+      default: false
+    },
+
+    // NEW: Store admin review notes
+    adminNotes: {
+      type: String,
+      trim: true,
+    },
+
+    // NEW: Track approval/rejection dates
+    adminReviewedAt: {
+      type: Date,
+    },
+
+    adminReviewedBy: {
+      type: String,
+      trim: true,
     }
   },
   { timestamps: true }
 );
+
+// Index for faster queries by status
+memberSchema.index({ status: 1, createdAt: -1 });
 
 export const Member = mongoose.model("Member", memberSchema);

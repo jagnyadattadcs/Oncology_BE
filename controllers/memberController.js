@@ -1,7 +1,12 @@
-// controllers/memberController.js
 import { Member } from '../models/memberModel.js';
-import { sendOtpEmail, sendMemberWelcomeEmail, sendPasswordChangeEmail } from '../config/nodemailer.js';
-import { uploadToCloudinary } from '../config/cloudinary.js';
+import {
+  sendPendingReviewEmail, 
+  sendApprovalEmail, 
+  sendRejectionEmail,
+  sendPasswordChangeEmail, 
+  sendMemberOtpEmail
+} from '../config/nodemailer.js';
+import { deleteFromCloudinary, extractPublicId, uploadToCloudinary } from '../config/cloudinary.js';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
@@ -19,8 +24,8 @@ async function generateUniqueId(phone) {
     // Get last 4 digits of phone
     const phoneLast4 = phone.slice(-4);
     
-    // Get total members count to generate serial number
-    const totalMembers = await Member.countDocuments();
+    // Get total approved members count to generate serial number
+    const totalMembers = await Member.countDocuments({ status: 'approved' });
     const serialNumber = (totalMembers + 1).toString().padStart(4, '0');
     
     // Generate unique ID
@@ -70,23 +75,55 @@ export const registerMember = async (req, res) => {
       });
     }
 
-    // Check if member already exists with email
+    // Check if member already exists with email (approved or pending)
     const existingMember = await Member.findOne({ email });
     if (existingMember) {
-      return res.status(400).json({
-        success: false,
-        message: "Member with this email already exists!"
-      });
+
+      // ❌ Already approved → block
+      if (existingMember.status === "approved") {
+        return res.status(409).json({
+          success: false,
+          message: "Member already registered and approved!"
+        });
+      }
+
+      // ❌ OTP verified but admin not approved yet → block
+      if (existingMember.status === "pending" && existingMember.isOtpVerified) {
+        return res.status(409).json({
+          success: false,
+          message: "OTP already verified. Awaiting admin approval."
+        });
+      }
+
+      // ✅ Pending + OTP NOT verified → resend OTP
+      if (existingMember.status === "pending" && !existingMember.isOtpVerified) {
+
+        const otp = generateOtp();
+        const hashedOtp = await bcrypt.hash(otp, 10);
+
+        existingMember.otp = hashedOtp;
+        existingMember.otpExpires = new Date(Date.now() + 10 * 60 * 1000);
+
+        await existingMember.save();
+
+        await sendMemberOtpEmail(existingMember.email, otp);
+
+        return res.status(200).json({
+          success: true,
+          message: "OTP resent successfully. Please verify to continue.",
+          email: existingMember.email
+        });
+      }
     }
 
-    // Check if member already exists with phone
-    const existingPhone = await Member.findOne({ phone });
-    if (existingPhone) {
-      return res.status(400).json({
-        success: false,
-        message: "Member with this phone number already exists!"
-      });
-    }
+    // Check if member already exists with phone (approved or pending)
+    // const existingPhone = await Member.findOne({ phone });
+    // if (existingPhone && existingPhone.status !== 'rejected') {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "Member with this phone number already exists!"
+    //   });
+    // }
 
     // Upload document image to Cloudinary
     const documentImageResult = await uploadToCloudinary(req.file.buffer, 'osoo_member_documents');
@@ -96,7 +133,7 @@ export const registerMember = async (req, res) => {
     const hashedOtp = await bcrypt.hash(otp, 10);
     const otpExpires = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
 
-    // Create member with OTP (not verified yet)
+    // Create member with OTP (status: pending)
     const memberData = {
       name,
       email,
@@ -104,6 +141,7 @@ export const registerMember = async (req, res) => {
       documentType,
       documentNo,
       documentImage: documentImageResult.secure_url,
+      status: 'pending', // Start with pending status
       otp: hashedOtp,
       otpExpires
     };
@@ -111,7 +149,7 @@ export const registerMember = async (req, res) => {
     // Check if temp data already exists (prevent duplicate)
     const tempMember = await Member.findOne({ 
       email, 
-      isVerified: false 
+      status: 'pending' 
     });
 
     if (tempMember) {
@@ -120,13 +158,13 @@ export const registerMember = async (req, res) => {
       tempMember.otpExpires = otpExpires;
       await tempMember.save();
     } else {
-      // Create new temp member
+      // Create new pending member
       await Member.create(memberData);
     }
 
     // Send OTP email
     try {
-      await sendOtpEmail(email, otp);
+      await sendMemberOtpEmail(email, otp);
     } catch (mailError) {
       console.error("Failed to send OTP email:", mailError);
       return res.status(500).json({
@@ -158,7 +196,7 @@ export const registerMember = async (req, res) => {
   }
 };
 
-// Verify OTP and Complete Registration
+// Verify OTP and Set to Pending Review
 export const verifyMemberOtp = async (req, res) => {
   try {
     const { email, otp } = req.body;
@@ -170,16 +208,16 @@ export const verifyMemberOtp = async (req, res) => {
       });
     }
 
-    // Find unverified member
+    // Find pending member
     const member = await Member.findOne({ 
       email, 
-      isVerified: false 
+      status: 'pending' 
     });
 
     if (!member) {
       return res.status(404).json({
         success: false,
-        message: "Member not found or already verified!"
+        message: "Member not found or already processed!"
       });
     }
 
@@ -212,31 +250,24 @@ export const verifyMemberOtp = async (req, res) => {
       });
     }
 
-    // Generate unique ID and temp password
-    const uniqueId = await generateUniqueId(member.phone);
-    const tempPassword = generateTempPassword();
-    const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
-
-    // Update member with verification details
-    member.uniqueId = uniqueId;
-    member.tempPassword = hashedTempPassword;
-    member.isVerified = true;
+    // Clear OTP and mark as pending admin review
     member.otp = null;
     member.otpExpires = null;
+    member.isOtpVerified = true;
     await member.save();
 
-    // Send welcome email with credentials
+    // Send pending review email
     try {
-      await sendMemberWelcomeEmail(email, member.name, uniqueId, tempPassword);
+      await sendPendingReviewEmail(email, member.name);
     } catch (mailError) {
-      console.error("Failed to send welcome email:", mailError);
-      // Don't fail the registration if email fails
+      console.error("Failed to send pending review email:", mailError);
+      // Don't fail the process if email fails
     }
 
     return res.status(200).json({
       success: true,
-      message: "Registration successful! Check your email for login credentials.",
-      memberId: uniqueId
+      message: "Registration submitted for admin review! You'll receive an email with credentials once approved.",
+      status: 'pending'
     });
 
   } catch (error) {
@@ -248,7 +279,137 @@ export const verifyMemberOtp = async (req, res) => {
   }
 };
 
-// Member Login
+// Admin: Approve Member (Send Credentials)
+export const approveMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminNotes } = req.body;
+
+    const member = await Member.findById(id);
+    
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found!"
+      });
+    }
+
+    if (member.status === 'approved') {
+      return res.status(400).json({
+        success: false,
+        message: "Member is already approved!"
+      });
+    }
+
+    // Generate unique ID and temp password
+    const uniqueId = await generateUniqueId(member.phone);
+    const tempPassword = generateTempPassword();
+    const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
+
+    // Update member with approval details
+    member.uniqueId = uniqueId;
+    member.tempPassword = hashedTempPassword;
+    member.isVerified = true;
+    member.status = 'approved';
+    member.adminNotes = adminNotes || null;
+    member.adminReviewedAt = new Date();
+    member.adminReviewedBy = req.admin?.name || 'Admin';
+    await member.save();
+
+    // Send approval email with credentials
+    try {
+      await sendApprovalEmail(member.email, member.name, uniqueId, tempPassword);
+    } catch (mailError) {
+      console.error("Failed to send approval email:", mailError);
+      // Still approve the member even if email fails
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Member approved successfully! Credentials sent via email.",
+      member: {
+        _id: member._id,
+        name: member.name,
+        email: member.email,
+        uniqueId: member.uniqueId,
+        status: member.status
+      }
+    });
+
+  } catch (error) {
+    console.error("Approve member error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while approving member."
+    });
+  }
+};
+
+// Admin: Reject Member
+export const rejectMember = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { adminNotes } = req.body;
+
+    if (!adminNotes) {
+      return res.status(400).json({
+        success: false,
+        message: "Admin notes are required when rejecting a member."
+      });
+    }
+
+    const member = await Member.findById(id);
+    
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Member not found!"
+      });
+    }
+
+    if (member.status === 'rejected') {
+      return res.status(400).json({
+        success: false,
+        message: "Member is already rejected!"
+      });
+    }
+
+    // Update member with rejection details
+    member.status = 'rejected';
+    member.adminNotes = adminNotes;
+    member.adminReviewedAt = new Date();
+    member.adminReviewedBy = req.admin?.name || 'Admin';
+    await member.save();
+
+    // Send rejection email
+    try {
+      await sendRejectionEmail(member.email, member.name, adminNotes);
+    } catch (mailError) {
+      console.error("Failed to send rejection email:", mailError);
+      // Still reject the member even if email fails
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Member rejected successfully.",
+      member: {
+        _id: member._id,
+        name: member.name,
+        email: member.email,
+        status: member.status
+      }
+    });
+
+  } catch (error) {
+    console.error("Reject member error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while rejecting member."
+    });
+  }
+};
+
+// Member Login (Only for approved members)
 export const loginMember = async (req, res) => {
   try {
     const { uniqueId, password } = req.body;
@@ -260,13 +421,17 @@ export const loginMember = async (req, res) => {
       });
     }
 
-    // Find member by uniqueId
-    const member = await Member.findOne({ uniqueId, isVerified: true });
+    // Find member by uniqueId - must be approved
+    const member = await Member.findOne({ 
+      uniqueId, 
+      status: 'approved',
+      isVerified: true 
+    });
 
     if (!member) {
       return res.status(404).json({
         success: false,
-        message: "Member not found or not verified!"
+        message: "Member not found or not approved!"
       });
     }
 
@@ -328,7 +493,7 @@ export const loginMember = async (req, res) => {
   }
 };
 
-// Change Password (from temp to permanent)
+// Change Password (from temp to permanent) - Only for approved members
 export const changeMemberPassword = async (req, res) => {
   try {
     const { uniqueId, currentPassword, newPassword } = req.body;
@@ -340,13 +505,17 @@ export const changeMemberPassword = async (req, res) => {
       });
     }
 
-    // Find member
-    const member = await Member.findOne({ uniqueId, isVerified: true });
+    // Find approved member
+    const member = await Member.findOne({ 
+      uniqueId, 
+      status: 'approved',
+      isVerified: true 
+    });
 
     if (!member) {
       return res.status(404).json({
         success: false,
-        message: "Member not found!"
+        message: "Member not found or not approved!"
       });
     }
 
@@ -400,7 +569,7 @@ export const changeMemberPassword = async (req, res) => {
   }
 };
 
-// Resend OTP
+// Resend OTP for pending members
 export const resendMemberOtp = async (req, res) => {
   try {
     const { email } = req.body;
@@ -412,16 +581,16 @@ export const resendMemberOtp = async (req, res) => {
       });
     }
 
-    // Find unverified member
+    // Find pending member
     const member = await Member.findOne({ 
       email, 
-      isVerified: false 
+      status: 'pending' 
     });
 
     if (!member) {
       return res.status(404).json({
         success: false,
-        message: "Member not found or already verified!"
+        message: "Member not found or already processed!"
       });
     }
 
@@ -437,7 +606,7 @@ export const resendMemberOtp = async (req, res) => {
 
     // Send OTP email
     try {
-      await sendOtpEmail(email, otp);
+      await sendMemberOtpEmail(email, otp);
     } catch (mailError) {
       console.error("Failed to resend OTP email:", mailError);
       return res.status(500).json({
@@ -460,12 +629,16 @@ export const resendMemberOtp = async (req, res) => {
   }
 };
 
-// Get Member Profile
+// Get Member Profile (Only for approved members)
 export const getMemberProfile = async (req, res) => {
   try {
     const { uniqueId } = req.params;
 
-    const member = await Member.findOne({ uniqueId, isVerified: true })
+    const member = await Member.findOne({ 
+      uniqueId, 
+      status: 'approved',
+      isVerified: true 
+    })
       .select('-password -tempPassword -otp -otpExpires');
 
     if (!member) {
@@ -489,7 +662,7 @@ export const getMemberProfile = async (req, res) => {
   }
 };
 
-// Update Member Profile
+// Update Member Profile (Only for approved members)
 export const updateMemberProfile = async (req, res) => {
   try {
     const { uniqueId } = req.params;
@@ -498,12 +671,17 @@ export const updateMemberProfile = async (req, res) => {
     // Remove fields that shouldn't be updated
     delete updates.uniqueId;
     delete updates.email;
+    delete updates.status;
     delete updates.isVerified;
     delete updates.isPaymentDone;
     delete updates.paymentHistory;
 
     const member = await Member.findOneAndUpdate(
-      { uniqueId, isVerified: true },
+      { 
+        uniqueId, 
+        status: 'approved',
+        isVerified: true 
+      },
       updates,
       { new: true, runValidators: true }
     ).select('-password -tempPassword -otp -otpExpires');
@@ -530,12 +708,21 @@ export const updateMemberProfile = async (req, res) => {
   }
 };
 
-// Get All Members (Admin)
+// Get All Members with Status Filter (Admin)
 export const getAllMembers = async (req, res) => {
   try {
-    const members = await Member.find({})
+    const { status } = req.query;
+    
+    let filter = {};
+    if (status) {
+      filter.status = status;
+    }
+
+    const allMembers = await Member.find(filter)
       .select('-password -tempPassword -otp -otpExpires')
       .sort({ createdAt: -1 });
+
+    const members = allMembers.filter((m)=> m.isOtpVerified);
 
     return res.status(200).json({
       success: true,
@@ -552,52 +739,46 @@ export const getAllMembers = async (req, res) => {
   }
 };
 
-// Toggle member verification (Admin)
-export const toggleMemberVerification = async (req, res) => {
+// Get Members by Status (Admin - Separate endpoint for convenience)
+export const getMembersByStatus = async (req, res) => {
   try {
-    const { id } = req.params;
-    const { isVerified } = req.body;
-
-    const member = await Member.findById(id);
+    const { status } = req.params;
     
-    if (!member) {
-      return res.status(404).json({
+    if (!['pending', 'approved', 'rejected'].includes(status)) {
+      return res.status(400).json({
         success: false,
-        message: "Member not found!"
+        message: "Invalid status. Must be: pending, approved, or rejected"
       });
     }
 
-    member.isVerified = isVerified !== undefined ? isVerified : !member.isVerified;
-    await member.save();
+    const members = await Member.find({ status })
+      .select('-password -tempPassword -otp -otpExpires')
+      .sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      message: `Member ${member.isVerified ? 'verified' : 'unverified'} successfully`,
-      member: {
-        _id: member._id,
-        name: member.name,
-        email: member.email,
-        isVerified: member.isVerified
-      }
+      count: members.length,
+      status,
+      members
     });
 
   } catch (error) {
-    console.error("Toggle verification error:", error);
+    console.error("Get members by status error:", error);
     return res.status(500).json({
       success: false,
-      message: "Internal server error while updating verification status."
+      message: "Internal server error while fetching members."
     });
   }
 };
 
-// Toggle member payment status (Admin)
-export const toggleMemberPayment = async (req, res) => {
+// Get Single Member Details (Admin)
+export const getMemberDetails = async (req, res) => {
   try {
     const { id } = req.params;
-    const { isPaymentDone } = req.body;
 
-    const member = await Member.findById(id);
-    
+    const member = await Member.findById(id)
+      .select('-password -tempPassword -otp -otpExpires');
+
     if (!member) {
       return res.status(404).json({
         success: false,
@@ -605,7 +786,46 @@ export const toggleMemberPayment = async (req, res) => {
       });
     }
 
-    member.isPaymentDone = isPaymentDone !== undefined ? isPaymentDone : !member.isPaymentDone;
+    return res.status(200).json({
+      success: true,
+      member
+    });
+
+  } catch (error) {
+    console.error("Get member details error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while fetching member details."
+    });
+  }
+};
+
+// Update Member Payment Status (Admin - Only for approved members)
+export const updateMemberPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { isPaymentDone } = req.body;
+
+    if (isPaymentDone === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment status is required!"
+      });
+    }
+
+    const member = await Member.findOne({ 
+      _id: id, 
+      status: 'approved' 
+    });
+    
+    if (!member) {
+      return res.status(404).json({
+        success: false,
+        message: "Approved member not found!"
+      });
+    }
+
+    member.isPaymentDone = isPaymentDone;
     await member.save();
 
     return res.status(200).json({
@@ -620,7 +840,7 @@ export const toggleMemberPayment = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Toggle payment error:", error);
+    console.error("Update payment error:", error);
     return res.status(500).json({
       success: false,
       message: "Internal server error while updating payment status."
@@ -633,6 +853,15 @@ export const deleteMember = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // Validate ID format
+    if (!id.match(/^[0-9a-fA-F]{24}$/)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid member ID format"
+      });
+    }
+
+    // Find member first
     const member = await Member.findById(id);
     
     if (!member) {
@@ -642,21 +871,89 @@ export const deleteMember = async (req, res) => {
       });
     }
 
-    // Optional: Delete document image from Cloudinary
-    // You might want to implement this based on your storage strategy
+    const responseData = {
+      success: true,
+      message: "Member deleted successfully",
+      deletedMember: {
+        id: member._id,
+        name: member.name,
+        email: member.email
+      }
+    };
 
+    // Delete document image from Cloudinary if it exists
+    if (member.documentImage && typeof member.documentImage === 'string') {
+      try {
+        // Extract public ID from Cloudinary URL
+        const publicId = extractPublicId(member.documentImage);
+        
+        if (publicId) {
+          console.log(`Attempting to delete Cloudinary image: ${publicId}`);
+          
+          // Delete image from Cloudinary
+          const result = await deleteFromCloudinary(publicId);
+          
+          if (result.result === 'ok') {
+            responseData.cloudinary = {
+              deleted: true,
+              publicId: publicId,
+              message: 'Image deleted from Cloudinary'
+            };
+          } else if (result.result === 'not found') {
+            responseData.cloudinary = {
+              deleted: false,
+              publicId: publicId,
+              message: 'Image not found in Cloudinary (might have been deleted already)'
+            };
+          } else {
+            responseData.cloudinary = {
+              deleted: false,
+              publicId: publicId,
+              message: `Cloudinary deletion failed: ${result.result}`
+            };
+          }
+        } else {
+          responseData.cloudinary = {
+            deleted: false,
+            message: 'Could not extract public ID from image URL',
+            imageUrl: member.documentImage
+          };
+        }
+      } catch (cloudinaryError) {
+        console.error('Cloudinary deletion error:', cloudinaryError);
+        responseData.cloudinary = {
+          deleted: false,
+          message: 'Error deleting from Cloudinary',
+          error: cloudinaryError.message
+        };
+      }
+    } else if (member.documentImage) {
+      responseData.cloudinary = {
+        deleted: false,
+        message: 'No valid document image URL found'
+      };
+    }
+
+    // Delete member from database
     await Member.findByIdAndDelete(id);
 
-    return res.status(200).json({
-      success: true,
-      message: "Member deleted successfully"
-    });
+    return res.status(200).json(responseData);
 
   } catch (error) {
     console.error("Delete member error:", error);
+    
+    // Handle specific errors
+    if (error.name === 'CastError') {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid member ID format"
+      });
+    }
+
     return res.status(500).json({
       success: false,
-      message: "Internal server error while deleting member."
+      message: "Internal server error while deleting member.",
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 };

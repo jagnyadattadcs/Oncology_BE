@@ -1,4 +1,3 @@
-// routes/memberRoute.js
 import express from 'express';
 import upload from '../config/multer.js';
 import {
@@ -10,8 +9,12 @@ import {
   getMemberProfile,
   updateMemberProfile,
   getAllMembers,
-  toggleMemberVerification,
-  toggleMemberPayment
+  approveMember,
+  rejectMember,
+  getMembersByStatus,
+  getMemberDetails,
+  updateMemberPayment,
+  deleteMember
 } from '../controllers/memberController.js';
 import { authenticateAdmin } from '../middleware/authMiddleware.js';
 
@@ -35,7 +38,11 @@ router.put('/profile/:uniqueId', updateMemberProfile);
 
 // Admin routes
 router.get('/admin/all', authenticateAdmin, getAllMembers);
-router.put('/admin/toggle-verify/:id', authenticateAdmin, toggleMemberVerification);
-router.put('/admin/toggle-payment/:id', authenticateAdmin, toggleMemberPayment);
+router.get('/admin/status/:status', authenticateAdmin, getMembersByStatus);
+router.get('/admin/details/:id', authenticateAdmin, getMemberDetails);
+router.put('/admin/approve/:id', authenticateAdmin, approveMember);
+router.put('/admin/reject/:id', authenticateAdmin, rejectMember);
+router.put('/admin/payment/:id', authenticateAdmin, updateMemberPayment);
+router.delete('/admin/delete/:id', authenticateAdmin, deleteMember);
 
 export default router;
