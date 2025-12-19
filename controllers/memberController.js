@@ -15,28 +15,6 @@ function generateOtp() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Generate unique member ID
-async function generateUniqueId(phone) {
-  try {
-    // Get current year last two digits
-    const year = new Date().getFullYear().toString().slice(-2);
-    
-    // Get last 4 digits of phone
-    const phoneLast4 = phone.slice(-4);
-    
-    // Get total approved members count to generate serial number
-    const totalMembers = await Member.countDocuments({ status: 'approved' });
-    const serialNumber = (totalMembers + 1).toString().padStart(4, '0');
-    
-    // Generate unique ID
-    return `OSOO${year}${phoneLast4}${serialNumber}`;
-  } catch (error) {
-    // Fallback ID if something goes wrong
-    const fallbackId = `OSOO${new Date().getFullYear().toString().slice(-2)}${phone.slice(-4)}${crypto.randomInt(1000, 9999)}`;
-    return fallbackId;
-  }
-}
-
 // Generate temporary password
 function generateTempPassword() {
   const length = 10;
@@ -56,7 +34,8 @@ export const registerMember = async (req, res) => {
       email, 
       phone, 
       documentType, 
-      documentNo 
+      documentNo,
+      agreeWithTerms
     } = req.body;
 
     // Check required fields
@@ -64,6 +43,14 @@ export const registerMember = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "All fields are required!"
+      });
+    }
+
+    // Add validation for agreeWithTerms
+    if (!agreeWithTerms || agreeWithTerms === 'false') {
+      return res.status(400).json({
+        success: false,
+        message: "You must agree to the Terms & Conditions"
       });
     }
 
@@ -140,6 +127,7 @@ export const registerMember = async (req, res) => {
       phone,
       documentType,
       documentNo,
+      agreeWithTerms: agreeWithTerms === 'true' || agreeWithTerms === true,
       documentImage: documentImageResult.secure_url,
       status: 'pending', // Start with pending status
       otp: hashedOtp,

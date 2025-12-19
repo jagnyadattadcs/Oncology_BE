@@ -61,7 +61,7 @@ const memberSchema = new mongoose.Schema(
 
     documentType: {
       type: String,
-      enum: ["Aadhaar", "PAN", "Voter", "Medical_Certificate"],
+      enum: ["aadhar", "pan", "voter_id", 'driving_license', 'medical_license', "passport"],
       required: true,
     },
 
@@ -74,6 +74,17 @@ const memberSchema = new mongoose.Schema(
     documentImage: {
       type: String,
       required: true,
+    },
+
+    agreeWithTerms: {
+      type: Boolean,
+      default: false,
+      required: [true, "Terms agreement is required"]
+    },
+
+    termsAgreedAt: {
+      type: Date,
+      default: new Date(),
     },
 
     // NEW: Three-stage verification status
