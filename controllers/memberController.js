@@ -283,7 +283,7 @@ export const verifyMemberOtp = async (req, res) => {
 export const approveMember = async (req, res) => {
   try {
     const { id } = req.params;
-    const { adminNotes } = req.body;
+    const { adminNotes, uniqueId } = req.body; // Add uniqueId from request body
 
     const member = await Member.findById(id);
     
@@ -301,13 +301,28 @@ export const approveMember = async (req, res) => {
       });
     }
 
-    // Generate unique ID and temp password
-    const uniqueId = await generateUniqueId(member.phone);
+    // Validate uniqueId is provided
+    if (!uniqueId || uniqueId.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: "Unique ID is required for approval!"
+      });
+    }
+
+    // Check if uniqueId is already taken (optional)
+    const existingMember = await Member.findOne({ uniqueId: uniqueId.trim() });
+    if (existingMember && existingMember._id.toString() !== id) {
+      return res.status(400).json({
+        success: false,
+        message: "This Unique ID is already assigned to another member!"
+      });
+    }
+
     const tempPassword = generateTempPassword();
     const hashedTempPassword = await bcrypt.hash(tempPassword, 10);
 
     // Update member with approval details
-    member.uniqueId = uniqueId;
+    member.uniqueId = uniqueId.trim(); // Use admin-provided uniqueId
     member.tempPassword = hashedTempPassword;
     member.isVerified = true;
     member.status = 'approved';
@@ -318,7 +333,7 @@ export const approveMember = async (req, res) => {
 
     // Send approval email with credentials
     try {
-      await sendApprovalEmail(member.email, member.name, uniqueId, tempPassword);
+      await sendApprovalEmail(member.email, member.name, uniqueId.trim(), tempPassword);
     } catch (mailError) {
       console.error("Failed to send approval email:", mailError);
       // Still approve the member even if email fails
