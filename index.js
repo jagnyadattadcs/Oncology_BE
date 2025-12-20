@@ -7,6 +7,7 @@ import carouselRoute from "./routes/carouselRoute.js";
 import memberRoute from "./routes/memberRoute.js";
 import eventRoute from './routes/eventRoute.js';
 import galleryRoute from './routes/galleryRoute.js';
+import contactRoute from './routes/contactRoute.js';
 
 dotenv.config();
 
@@ -24,6 +25,7 @@ app.use("/api/carousel", carouselRoute);
 app.use("/api/member", memberRoute);
 app.use("/api/events", eventRoute);
 app.use("/api/gallery", galleryRoute);
+app.use("/api/contact", contactRoute);
 
 app.get("/", (req, res)=>{
     res.send("OSOO Backend is Running!");
