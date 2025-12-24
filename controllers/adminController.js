@@ -173,3 +173,141 @@ export const verifyOtp = async (req, res) => {
     });
   }
 };
+
+// Add these functions to your adminController.js
+
+export const getAdminProfile = async (req, res) => {
+    try {
+        const admin = await Admin.findById(req.admin.id).select('-password -otp -otpExpires');
+        
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                message: "Admin not found!"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: admin
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error!"
+        });
+    }
+};
+
+export const updateAdminProfile = async (req, res) => {
+    try {
+        const { name, email } = req.body;
+        const admin = await Admin.findById(req.admin.id);
+
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                message: "Admin not found!"
+            });
+        }
+
+        // Check if email is being changed and if it's already taken
+        if (email && email !== admin.email) {
+            const emailExists = await Admin.findOne({ 
+                email, 
+                _id: { $ne: req.admin.id } 
+            });
+            
+            if (emailExists) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Email already in use!"
+                });
+            }
+            admin.email = email;
+        }
+
+        if (name) admin.name = name;
+
+        await admin.save();
+
+        const updatedAdmin = admin.toObject();
+        delete updatedAdmin.password;
+        delete updatedAdmin.otp;
+        delete updatedAdmin.otpExpires;
+
+        return res.status(200).json({
+            success: true,
+            message: "Profile updated successfully!",
+            data: updatedAdmin
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error!"
+        });
+    }
+};
+
+export const changePassword = async (req, res) => {
+    try {
+        const { currentPassword, newPassword, confirmPassword } = req.body;
+        
+        if (!currentPassword || !newPassword || !confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "All password fields are required!"
+            });
+        }
+
+        if (newPassword !== confirmPassword) {
+            return res.status(400).json({
+                success: false,
+                message: "New password and confirm password don't match!"
+            });
+        }
+
+        if (newPassword.length < 6) {
+            return res.status(400).json({
+                success: false,
+                message: "Password must be at least 6 characters long!"
+            });
+        }
+
+        const admin = await Admin.findById(req.admin.id);
+        
+        if (!admin) {
+            return res.status(404).json({
+                success: false,
+                message: "Admin not found!"
+            });
+        }
+
+        // Verify current password
+        const isPasswordValid = await bcrypt.compare(currentPassword, admin.password);
+        if (!isPasswordValid) {
+            return res.status(401).json({
+                success: false,
+                message: "Current password is incorrect!"
+            });
+        }
+
+        // Hash new password
+        const hashedPassword = await bcrypt.hash(newPassword, 14);
+        admin.password = hashedPassword;
+        await admin.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Password changed successfully!"
+        });
+    } catch (error) {
+        console.log(error);
+        return res.status(500).json({
+            success: false,
+            message: "Internal Server Error!"
+        });
+    }
+};
