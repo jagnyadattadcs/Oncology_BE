@@ -24,7 +24,6 @@ const memberSchema = new mongoose.Schema(
   {
     uniqueId: {
       type: String,
-      unique: true,
       index: true,
       trim: true,
       sparse: true, // Allow null for pending members
@@ -59,16 +58,35 @@ const memberSchema = new mongoose.Schema(
       match: /^[6-9]\d{9}$/,
     },
 
-    documentType: {
+    speciality: {
       type: String,
-      enum: ["aadhar", "pan", "voter_id", 'driving_license', 'medical_license', "passport"],
+      enum: [
+        "surgical_oncology",
+        "radiation_oncology",
+        "medical_oncology",
+        "paediatric_oncology",
+        "haematology_haematooncology",
+        "gynaecologic_oncology",
+        "head_neck_oncology",
+        "oncopathology",
+        "uro_oncology",
+        "radiology",
+        "nuclear_medicine",
+        "palliative_care",
+        "others"
+      ],
       required: true,
     },
-
-    documentNo: {
-      type: String,
+    qualification: {
+      type: [String],
+      enum: ['dm', 'mch', 'md', 'ms', 'fellowship', 'drnb', 'dnb', 'others'],
       required: true,
-      trim: true,
+      validate: {
+        validator: function(v) {
+          return v.length > 0; // At least one qualification
+        },
+        message: 'At least one qualification is required'
+      }
     },
 
     documentImage: {

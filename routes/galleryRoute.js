@@ -1,4 +1,3 @@
-// routes/galleryRoute.js
 import express from 'express';
 import upload from '../config/multer.js';
 import {
@@ -9,7 +8,8 @@ import {
   updateGalleryImage,
   deleteGalleryImage,
   deleteMultipleGalleryImages,
-  getGalleryStats
+  getGalleryStats,
+  deleteImageFromGallery
 } from '../controllers/galleryController.js';
 import { authenticateAdmin } from '../middleware/authMiddleware.js';
 
@@ -38,7 +38,7 @@ router.post(
 router.put(
   '/:id',
   authenticateAdmin,
-  upload.single('image'),
+  upload.single('image'), // Optional: for adding new images to existing entry
   updateGalleryImage
 );
 
@@ -46,6 +46,13 @@ router.delete(
   '/:id',
   authenticateAdmin,
   deleteGalleryImage
+);
+
+// Delete specific image from a gallery entry
+router.delete(
+  '/:id/image/:imageIndex',
+  authenticateAdmin,
+  deleteImageFromGallery
 );
 
 router.post(

