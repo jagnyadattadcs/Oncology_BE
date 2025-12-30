@@ -33,13 +33,13 @@ export const registerMember = async (req, res) => {
       name, 
       email, 
       phone, 
-      documentType, 
-      documentNo,
+      speciality, 
+      qualification,
       agreeWithTerms
     } = req.body;
 
     // Check required fields
-    if (!name || !email || !phone || !documentType || !documentNo) {
+    if (!name || !email || !phone || !speciality || !qualification) {
       return res.status(400).json({
         success: false,
         message: "All fields are required!"
@@ -125,8 +125,8 @@ export const registerMember = async (req, res) => {
       name,
       email,
       phone,
-      documentType,
-      documentNo,
+      speciality,
+      qualification,
       agreeWithTerms: agreeWithTerms === 'true' || agreeWithTerms === true,
       documentImage: documentImageResult.secure_url,
       status: 'pending', // Start with pending status
@@ -449,13 +449,7 @@ export const loginMember = async (req, res) => {
         return res.status(200).json({
           success: true,
           message: "Login successful with temporary password. Please change your password.",
-          member: {
-            id: member._id,
-            uniqueId: member.uniqueId,
-            name: member.name,
-            email: member.email,
-            hasTempPassword: true
-          },
+          member,
           requiresPasswordChange: true
         });
       }
@@ -711,7 +705,37 @@ export const updateMemberProfile = async (req, res) => {
   }
 };
 
-// Get All Members with Status Filter (Admin)
+// Get All Members
+export const getAllMembersNormal = async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    let filter = {};
+    if (status) {
+      filter.status = status;
+    }
+
+    const allMembers = await Member.find(filter)
+      .select('-password -tempPassword -otp -otpExpires -documentImage -agreeWithTerms -termsAgreedAt -status -isPaymentDone -paymentHistory -adminNotes -adminReviewedAt -adminReviewedBy -address')
+      .sort({ createdAt: -1 });
+
+    const members = allMembers.filter((m)=> m.isOtpVerified);
+
+    return res.status(200).json({
+      success: true,
+      count: members.length,
+      members
+    });
+
+  } catch (error) {
+    console.error("Get all members error:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal server error while fetching members."
+    });
+  }
+};
+
 export const getAllMembers = async (req, res) => {
   try {
     const { status } = req.query;

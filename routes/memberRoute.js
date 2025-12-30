@@ -14,7 +14,8 @@ import {
   getMembersByStatus,
   getMemberDetails,
   updateMemberPayment,
-  deleteMember
+  deleteMember,
+  getAllMembersNormal
 } from '../controllers/memberController.js';
 import { authenticateAdmin } from '../middleware/authMiddleware.js';
 
@@ -32,6 +33,7 @@ router.post('/login', loginMember);
 router.post('/change-password', changeMemberPassword);
 router.post('/resend-otp', resendMemberOtp);
 router.get('/profile/:uniqueId', getMemberProfile);
+router.get('/allmember', getAllMembersNormal);
 
 // Protected member routes (could add JWT middleware here later)
 router.put('/profile/:uniqueId', updateMemberProfile);

@@ -43,6 +43,10 @@ const memberSchema = new mongoose.Schema(
       trim: true,
     },
 
+    designation : {
+      type: String,
+    },
+
     email: {
       type: String,
       required: true,
@@ -79,7 +83,7 @@ const memberSchema = new mongoose.Schema(
     },
     qualification: {
       type: [String],
-      enum: ['dm', 'mch', 'md', 'ms', 'fellowship', 'drnb', 'dnb', 'others'],
+      // enum: ['dm', 'mch', 'md', 'ms', 'fellowship', 'drnb', 'dnb', 'others'],
       required: true,
       validate: {
         validator: function(v) {
@@ -92,6 +96,14 @@ const memberSchema = new mongoose.Schema(
     documentImage: {
       type: String,
       required: true,
+    },
+
+    address: {
+      type: String,
+    },
+
+    hospital: {
+      type: String
     },
 
     agreeWithTerms: {
