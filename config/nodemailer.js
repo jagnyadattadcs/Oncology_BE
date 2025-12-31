@@ -37,7 +37,7 @@ export async function sendOtpEmail(to, otp) {
   `;
 
   const info = await transporter.sendMail({
-    from: `ODISHA SOCIETY OF ONCOLOGY <${from}>`,
+    from: `OSO Official <${from}>`,
     to,
     subject,
     html,

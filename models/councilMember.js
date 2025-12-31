@@ -58,7 +58,7 @@ const councilMemberSchema = new mongoose.Schema({
     ],
     role: {
         type: String,
-        enum: ["President", "Vice-President", "Secretary", "Treasurer", "Executive-Member"],
+        enum: ["President", "Past-President", "Vice-President", "Joint-Secretary", "Secretary", "Treasurer", "Editor", "Advisory-Board-Member", "Executive-Member"],
         default: "Executive-Member"
     }
 },{timestamps: true});
